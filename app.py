@@ -138,16 +138,16 @@ if uploaded_file:
         ):
 
             with st.spinner(
-                "Generating Summary..."
+                "Generating Summary using guardials..."
             ):
 
                 summary = generate_summary(
                     notes
                 )
 
-            st.write(
-                summary
-            )
+            st.session_state.summary_text=summary
+            if "summary_text" in st.session_state:
+                st.markdown(st.session_state.summary_text)
 
             st.download_button(
                 "📥 Download Summary",
@@ -193,16 +193,31 @@ if uploaded_file:
         ):
 
             with st.spinner(
-                "Creating Quiz..."
+                "Creating a structured quiz..."
             ):
+                
 
                 quiz = generate_quiz(
-                    notes
+                    notes,num_questions=10
                 )
 
-            st.write(
-                quiz
-            )
+            if quiz:
+                st.session_start.quiz_list=quiz
+            else:
+                st.error("failed to generate quiz!!,try again!!")
+            if "quiz_list" in st.session_state and st.session_state.quiz_list:
+                score=0
+                for idx,item in enumerate(st.session_state.quiz_list):
+                    st.markdown(f"**Q{idx+1}:{item['question']}**")
+                    user_ans=st.radio(
+                    "select your option:",
+                    item['options'],
+                    key=f"quiz_q_{idx}"
+                    ) 
+                    if user_ans==item['answer']:
+                        score=+1
+
+                st.metric(label="your current score",value=f"{score}/{len(st.session_state.quiz_list)}")
 
             st.download_button(
                 "📥 Download Quiz",
@@ -219,5 +234,5 @@ else:
 st.markdown("---")
 
 st.caption(
-    "Developed by Himanshu Rawat | AI Study Assistant"
+    "Developed by Himanshu Rawat and Aditya badatya | AI Study Assistant"
 )

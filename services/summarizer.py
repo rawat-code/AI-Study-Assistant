@@ -1,5 +1,5 @@
 from utils.llm import generate_response
-from services.text_processor import chunk_text,build_grounded_prompt
+from services.text_processor import chunk_text
 
 def generate_summary(notes: str) ->str:
     text_chunks=chunk_text(notes,chunk_size=1200,overlap=150)
