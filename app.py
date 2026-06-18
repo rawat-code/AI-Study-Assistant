@@ -7,6 +7,7 @@ from services.qa_engine import answer_question
 from services.quiz_generator import generate_quiz
 from services.summarizer import generate_summary
 from utils.quiz_parser import parse_quiz
+from utils.db_manager import save_documnet_to_db,get_user_data
 
 st.set_page_config(
     page_title="AI Study Assistant",
@@ -340,6 +341,23 @@ with st.sidebar:
         <div class="card-sub">Learn Faster. <span>Revise Smarter.</span></div>
     </div>
     """, unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("### 🗄️ you AI knowledge vault")
+    st.markdown("<hr style='margin: 10px 0;'>",unsafe_allow_html=True)
+    library_items=get_user_data()
+    if library_items:
+        for n in library_items:
+             with st.expander(f"📑{n['filename']}"):
+                st.caption(f"📅Uploaded:{n['Upload_date']}")
+                st.markdown("**📌 AI Summary preview:**")
+                st.write(n['summary'])
+
+                if st.button("Load Text", key=f"side_load_{n['id']}"):
+                     st.session_state.last_uploaded_filename=n['filename']
+                     st.session_state.notes=n['processed_text']
+                     st.success(f"Loaded {n['filename']}!")
+                else:
+                     st.info("your vault is empty.Drop a PDF file in the main panel uploader to start your collection!")     
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -427,6 +445,8 @@ if uploaded_file:
     if not notes:
         st.error("❌ No text found in this PDF. Please try another file.")
         st.stop()
+    #this saves the document in our database!
+    save_documnet_to_db(uploaded_file.name, notes)    
 
     # Only count a new upload if it's a different file than last time
     if uploaded_file.name != st.session_state.last_uploaded_filename:
@@ -435,7 +455,7 @@ if uploaded_file:
         # Reset chat history when a new PDF is uploaded
         st.session_state.messages = []
 
-    st.success("✅ PDF uploaded successfully!")
+    st.success("✅ PDF uploaded and synchronized successfully!")
 
     # Info strip
     st.markdown(f"""
@@ -470,31 +490,40 @@ if uploaded_file:
 
     # ── Tab 1: Summary ────────────────────────────────────────────────────────
     with tab1:
-        if st.button("🚀 Generate Summary"):
-            with st.spinner("Generating summary…"):
-                summary = generate_summary(notes)
+        if st.button(
+            "🚀 Generate Summary"
+        ):
 
-            placeholder = st.empty()
-            typed_text = ""
-            for char in summary:
-                typed_text += char
-                placeholder.markdown(f"""
-<div style="
-    padding: 20px;
-    border-radius: 14px;
-    border: 1px solid rgba(99,102,241,0.2);
-    background: rgba(99,102,241,0.05);
-    color: #d1d5db;
-    line-height: 1.7;
-">
-{typed_text}
-</div>
-""", unsafe_allow_html=True)
-                time.sleep(0.001)
+            with st.spinner(
+                "Generating Summary with guardials..."
+            ):
 
-            st.download_button(
+                summary = generate_summary(
+                    notes
+                )
+
+            st.session_state["summary_text"]=summary
+            if "summary_text" in st.session_state and st.session_state["summary_text"]:
+                placeholder = st.empty()
+                typed_text = ""
+                for char in st.session_state.summary_text:
+                     typed_text += char
+                     placeholder.markdown(f"""
+                                 <div style="
+                                 padding: 20px;
+                                 border-radius: 14px;
+                                 border: 1px solid rgba(99,102,241,0.2);
+                                 background: rgba(99,102,241,0.05);
+                                 color: #d1d5db;
+                                 line-height: 1.7;
+                                ">
+                                 {typed_text}
+                                 </div>
+                     """, unsafe_allow_html=True)
+                     time.sleep(0.001)
+                st.download_button(
                 "📥 Download Summary",
-                summary,
+                st.session_state["summary_text"],
                 file_name="summary.txt"
             )
 
@@ -535,8 +564,8 @@ if uploaded_file:
     # ── Tab 3: Quiz ───────────────────────────────────────────────────────────
     with tab3:
         if st.button("📚 Generate Quiz"):
-            with st.spinner("Creating quiz…"):
-                quiz = generate_quiz(notes)
+            with st.spinner("Creating a structured quiz…"):
+                quiz = generate_quiz(notes,num_questions=10)
                 st.session_state["quiz"] = quiz
 
         if "quiz" in st.session_state:
@@ -570,7 +599,7 @@ if uploaded_file:
                 if st.button("🚀 Submit Quiz"):
                     score = 0
                     for i, q in enumerate(questions):
-                        selected = answers[i]
+                        selected = st.session_state.get(f"q_{i}")
                         correct = q["answer"]
 
                         st.markdown(f"#### Question {i+1}")
@@ -584,40 +613,43 @@ if uploaded_file:
                             st.error(f"❌ Wrong — Correct Answer: {correct}")
 
                         st.info(q["explanation"])
+                        if questions:
+                            percentage = int((score / len(questions)) * 100)
+                        else:
+                            percentage=0
+                        st.session_state["quiz_text"]=quiz
+                        if "quiz_text" in st.session_state and st.session_state["quiz_text"]:
+                             st.markdown("### ")
+                             # Update stats
+                             st.session_state.quizzes_taken += 1
+                             st.session_state.score_history.append(percentage)
+                             st.session_state.avg_score = int(
+                             sum(st.session_state.score_history) / len(st.session_state.score_history)
+                        )
+                             render_stats()
 
-                    percentage = int((score / len(questions)) * 100)
+                             st.markdown(f"""
+                             <div style="
+                             padding: 30px;
+                             border-radius: 16px;
+                             text-align: center;
+                             background: rgba(99,102,241,0.08);
+                             border: 1px solid rgba(99,102,241,0.25);
+                             margin-top: 16px;
+                             ">
+                             <p style="font-size:28px;margin:0;">🏆</p>
+                             <h2 style="color:white;margin:8px 0 4px;">Quiz Results</h2>
+                             <p style="font-size:42px;font-weight:800;color:#818cf8;margin:0;">{score}/{len(questions)}</p>
+                             <p style="font-size:20px;color:#d1d5db;margin:4px 0 0;">{percentage}% Score</p>
+                             </div>
+                             """, unsafe_allow_html=True)
 
-                    # Update stats
-                    st.session_state.quizzes_taken += 1
-                    st.session_state.score_history.append(percentage)
-                    st.session_state.avg_score = int(
-                        sum(st.session_state.score_history) / len(st.session_state.score_history)
-                    )
-                    render_stats()
-
-                    st.markdown(f"""
-<div style="
-    padding: 30px;
-    border-radius: 16px;
-    text-align: center;
-    background: rgba(99,102,241,0.08);
-    border: 1px solid rgba(99,102,241,0.25);
-    margin-top: 16px;
-">
-    <p style="font-size:28px;margin:0;">🏆</p>
-    <h2 style="color:white;margin:8px 0 4px;">Quiz Results</h2>
-    <p style="font-size:42px;font-weight:800;color:#818cf8;margin:0;">{score}/{len(questions)}</p>
-    <p style="font-size:20px;color:#d1d5db;margin:4px 0 0;">{percentage}% Score</p>
-</div>
-""", unsafe_allow_html=True)
-
-                    st.progress(percentage / 100)
-
-                    st.download_button(
-                        "📥 Download Quiz",
-                        st.session_state["quiz"],
-                        file_name="quiz.txt"
-                    )
+                             st.progress(percentage / 100)
+                             st.download_button(
+                                "📥 Download Quiz",
+                                st.session_state["quiz"],
+                                file_name="quiz.txt"
+                                )
 
 else:
     st.markdown("""
@@ -637,4 +669,7 @@ render_stats()
 
 # ── Footer ─────────────────────────────────────────────────────────────────────
 st.markdown("---")
-st.caption("Developed by Himanshu Rawat · AI Study Assistant")
+
+st.caption(
+    "Developed by Himanshu Rawat and Aditya badatya | AI Study Assistant"
+)
