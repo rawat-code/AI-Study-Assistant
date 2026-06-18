@@ -1,39 +1,46 @@
-from utils.gemini import model
-import json 
-from utils.llm import (
-    generate_response
-)
+from utils.llm import generate_response
 from services.text_processor import chunk_text
+from utils.db_manager import generate_text_hash,check_cache,save_to_cache
 
-def generate_quiz(notes:str ,num_questions: int=10)->list:
+def generate_quiz(notes:str ,num_questions: int=10)->str:
+    text_hash=generate_text_hash(notes)
+    cached_quiz=check_cache(text_hash,request_type='quiz')
+    if cached_quiz:
+        print("cache hit!,returning quiz instantly from database.")
+        return cached_quiz
+    
     text_chunks=chunk_text(notes,chunk_size=1200,overlap=150)
-    combined_context="\n----CONTENT BLOCK-----\n".join(text_chunks[:5])
+    combined_context="\n----CONTENT BLOCK-----\n".join(text_chunks)
 
     prompt = f"""
               you are an expert academic examiner .create a strictly accurate multiple-choice quiz based only on the source material provided below.
               ANTI-HALLUCINATION GUARDAILS:
+              -rely only on the clear facts explicitly mentioned in the context.
               -direct facts only.do not extrapolate,assume,or pull outside concepts different from the main concept of source material.
               -if the source material does not contain enough data for {num_questions} questions ,only generate as many can be verified.
                 
-              OUTPUT :
-              you must respond only with a raw json array of objects.do not include any markdown like '''json or trailing text.'''follow this exact structure:
-              [{{
-              "question":"clear question text drawn from context?",
-              "options":["option A","option B","option C","option D"],
-              "answer":"The exact string matching the correct option"
-              }}]
+              OUTPUT FORMAT INSTRUCTION:
+              For EACH question use EXACTLY this format:
+
+                Q1. Question
+
+                   A) Option A
+                   B) Option B
+                   C) Option C
+                   D) Option D
+
+                    Answer: [insert only the correct option letter here (eg:A,B,C,D)]
+
+                    Explanation:
+                    Short explanation of why the answer is correct.
+
+                Repeat for all{num_questions} questions.
+             
                ----start of source material-----
                {combined_context}
                ----end of source material------
-               JSON output:
                """
     print(f"generating {num_questions}grounded quiz questions...")
-    raw_response=generate_response(prompt).strip()
-    if raw_response.startswith("'''"):
-        raw_response=raw_response.strip("'").replace("json","",1).strip()
-    try:
-        quiz_data=json.loads(raw_response)  
-        return quiz_data
-    except Exception as e:
-        print(f"JSON parsing error:{e}.falling back to default container.")
-        return []  
+    result=generate_response(prompt)
+    save_to_cache(text_hash,request_type='quiz',cached_response=result)
+    return result 
